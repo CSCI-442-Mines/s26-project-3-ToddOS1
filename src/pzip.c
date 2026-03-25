@@ -26,5 +26,6 @@ void pzip(int n_threads, char *input_chars, int input_chars_size,
 	  struct zipped_char *zipped_chars, int *zipped_chars_count,
 	  int *char_frequency)
 {
+  // Test commit
 	printf("TODO: Start from here!\n");
 }
