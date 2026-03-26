@@ -6,6 +6,76 @@
 
 #include "pzip.h"
 
+pthread_mutex_t lock; // This will be used when writing to char_frequency
+pthread_mutex_t threadNumber; // This will wait for the thread to know its own id before it is changed
+pthread_barrier_t synchronize;
+
+struct commonVariables{
+  int n_threads;
+  char *input_chars;
+  int input_chars_size;
+	struct zipped_char *zipped_chars;
+  int *zipped_chars_count;
+	int *char_frequency;
+  int thread_number;
+  int characters_per_thread;
+};
+
+static void *zipThread(void *passedVariables_void){
+  // Translates back from void to struct ptr
+  struct commonVariables *passedVariables = (struct commonVariables*) passedVariables_void;
+
+  // Save the local thread number and unlock
+  int local_thread_number = passedVariables->thread_number;
+  pthread_mutex_unlock(&threadNumber); // This will unlock the main thread
+
+  // Create a local array of zipped chars
+  struct zipped_char *local_zipped_chars;
+  local_zipped_chars = malloc(sizeof(*local_zipped_chars));
+  if (local_zipped_chars == NULL) {
+      fprintf(stderr, "malloc failed\n");
+  }
+
+  // Specify beginning and ending index for the array of characters for the thread to analyze
+  int beginningIndex = local_thread_number * passedVariables->characters_per_thread;
+  int endingIndex = beginningIndex + passedVariables->characters_per_thread;
+
+  // Create temporary variables for loop
+  int zipped_char_array_index = 0;
+
+  // Initialize the array index to starting value (helps simplify my looping logic)
+  local_zipped_chars[zipped_char_array_index].character = passedVariables->input_chars[beginningIndex];
+  local_zipped_chars[zipped_char_array_index].occurence = 0;
+
+  for(int i = beginningIndex; i < endingIndex; i++){
+    if(local_zipped_chars[zipped_char_array_index].character == passedVariables->input_chars[i]){ // If we've already seen the character just add to count
+      local_zipped_chars[zipped_char_array_index].occurence++;
+    } else { // Increase the size of the array if there is a different letter
+      zipped_char_array_index++;
+      local_zipped_chars = realloc(local_zipped_chars, (zipped_char_array_index + 1) * sizeof(*local_zipped_chars)); // This is weird, it allocates just one more for the array
+      local_zipped_chars[zipped_char_array_index].character = passedVariables->input_chars[i];
+      local_zipped_chars[zipped_char_array_index].occurence++;
+    }
+  }
+
+  // Modify data that is globally accessed
+  pthread_mutex_lock(&lock);
+  //passedVariables->zipped_chars = realloc(passedVariables->zipped_chars, (zipped_char_array_index + 1) * sizeof(*local_zipped_chars)); // Does not need the malloc
+  for(int i = 0; i < zipped_char_array_index; i++){
+    passedVariables->zipped_chars[*(passedVariables->zipped_chars_count) + i].character = local_zipped_chars[i].character; // Adds our local zipped_chars to global index
+    passedVariables->zipped_chars[*(passedVariables->zipped_chars_count) + i].occurence = local_zipped_chars[i].occurence;
+    passedVariables->char_frequency[local_zipped_chars[i].character - 'a'] += local_zipped_chars[i].occurence;
+  }
+
+  *(passedVariables->zipped_chars_count) += zipped_char_array_index + 1;
+  pthread_mutex_unlock(&lock);
+
+  pthread_barrier_wait(&synchronize); // Wait at end here
+
+  return NULL;
+}
+
+
 /**
  * pzip() - zip an array of characters in parallel
  *
@@ -26,6 +96,36 @@ void pzip(int n_threads, char *input_chars, int input_chars_size,
 	  struct zipped_char *zipped_chars, int *zipped_chars_count,
 	  int *char_frequency)
 {
-  // Test commit
-	printf("TODO: Start from here!\n");
+  // Array for storing thread IDs
+  pthread_t threadIDs[n_threads];
+
+  // This portion will allow me to pass everthing that we want into the helper function
+  struct commonVariables passedVariables;
+  passedVariables.n_threads = n_threads; // Probably can depricate
+  passedVariables.input_chars = input_chars;
+  passedVariables.input_chars_size = input_chars_size; // Probably can depricate
+  passedVariables.zipped_chars = zipped_chars;
+  passedVariables.zipped_chars_count = zipped_chars_count;
+  passedVariables.char_frequency = char_frequency;
+  passedVariables.characters_per_thread = input_chars_size / n_threads;
+
+  // Initialize barrier before I create threads
+  pthread_barrier_init(&synchronize, NULL, n_threads);
+
+  // Loop for number of threads I need
+  for(int i = 0; i < n_threads; i++){
+    passedVariables.thread_number = i;
+    if(pthread_create(&threadIDs[i], NULL, zipThread, &passedVariables) != 0){
+      fprintf(stderr, "pthread_create failed\n");
+    }
+    pthread_mutex_lock(&threadNumber);
+  }
+
+  // Wait until all threads are complete
+  pthread_barrier_wait(&synchronize);
+
+  // Join everything back together
+  for(int i = 0; i < n_threads; i++){
+    pthread_join(threadIDs[i], NULL);
+  }
 }
