@@ -28,12 +28,11 @@ static void *zipThread(void *passedVariables_void){
 
   // Save the local thread number and unlock
   int local_thread_number = passedVariables->thread_number;
-  //printf("%d", local_thread_number);
   pthread_mutex_unlock(&threadNumber); // This will unlock the main thread
 
   // Create a local array of zipped chars
   struct zipped_char *local_zipped_chars;
-  local_zipped_chars = malloc(sizeof(*local_zipped_chars));
+  local_zipped_chars = malloc(passedVariables->characters_per_thread * sizeof(*local_zipped_chars)); // Preallocate
   if (local_zipped_chars == NULL) {
       fprintf(stderr, "malloc failed\n");
   }
@@ -54,14 +53,13 @@ static void *zipThread(void *passedVariables_void){
       local_zipped_chars[zipped_char_array_index].occurence++;
     } else { // Increase the size of the array if there is a different letter
       zipped_char_array_index++;
-      local_zipped_chars = realloc(local_zipped_chars, (zipped_char_array_index + 1) * sizeof(*local_zipped_chars)); // This is weird, it allocates just one more for the array
+      //local_zipped_chars = realloc(local_zipped_chars, (zipped_char_array_index + 1) * sizeof(*local_zipped_chars)); // This is weird, it allocates just one more for the array
       local_zipped_chars[zipped_char_array_index].character = passedVariables->input_chars[i];
       local_zipped_chars[zipped_char_array_index].occurence = 1;
     }
   }
 
   // This will check if we know the sizes of everything up to the current thread
-
   int known = 0;
   int final_index = 0; // allocate up here to save on time
   passedVariables->thread_slot_size[local_thread_number] = zipped_char_array_index + 1;
